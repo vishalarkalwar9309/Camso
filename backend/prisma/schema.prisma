@@ -1,0 +1,764 @@
+// =============================================================================
+// CAMSO Backend — Prisma Schema
+// Phase 2: Authentication Foundation
+//
+// Scope: users, refresh_tokens, user_devices
+// Deferred to later phases:
+//   - admin_users, admin_user_id FK on refresh_tokens  (Aary / Phase 10)
+//   - business_type enum                               (Phase 4, pending CEAT confirmation)
+//   - product, category, search, bookmark, feedback    (Phases 6–9)
+//   - languages, translations, media_assets            (shared — later phase)
+// =============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =============================================================================
+// Enums
+// =============================================================================
+
+// Platform: mobile device operating system.
+// Only two values are in scope for Launch 1.
+enum Platform {
+  ANDROID
+  IOS
+}
+
+// SpecType: product specification category.
+enum SpecType {
+  SPECIFICATION
+  DIMENSION
+  PERFORMANCE
+}
+
+// =============================================================================
+// Models
+// =============================================================================
+
+// User
+// ----
+// Represents both guest users (no credentials) and registered users.
+//
+// Guest users:      is_guest = true,  email = null, password_hash = null
+// Registered users: is_guest = false, email = set,  password_hash = set
+//
+// email and phone are both nullable because guests have neither.
+// PostgreSQL treats each NULL as distinct, so multiple NULL emails do not
+// violate the unique constraint — this is intentional and correct.
+//
+// password_hash stores a bcrypt hash only. Plaintext passwords are never stored.
+//
+// preferred_language is a plain string (ISO 639-1 code, e.g. "en").
+// It is not a FK to a languages table — that table is not in scope for this phase.
+//
+// DEFERRED:
+//   - business_type enum (pending CEAT confirmation of exact values; added in Phase 4)
+model User {
+  id                 String    @id @default(cuid())
+  email              String?   @unique
+  phone              String?   @unique
+  password_hash      String?
+  display_name       String?
+  is_guest           Boolean   @default(true)
+  is_active          Boolean   @default(true)
+  preferred_language String    @default("en")
+  created_at         DateTime  @default(now())
+  updated_at         DateTime  @updatedAt
+
+  // Relations
+  refresh_tokens RefreshToken[]
+  devices        UserDevice[]
+  search_logs    SearchLog[]
+  bookmarks      Bookmark[]
+
+  @@index([created_at])
+  @@map("users")
+}
+
+// RefreshToken
+// ------------
+// Stores hashed refresh tokens for the rotation/revocation mechanism.
+//
+// The raw opaque token is returned to the client once and NEVER persisted.
+// token_hash stores SHA-256(rawToken). On each refresh request, the service
+// hashes the incoming token and looks it up here.
+//
+// Rotation: on a successful refresh, revoked_at is set on the old token
+// and a new token row is inserted. The old row is kept for audit purposes
+// and cleaned up by a background job (future phase).
+//
+// user_id is NON-NULLABLE:
+//   This phase covers mobile-user authentication only. Every refresh token
+//   issued in this system belongs to a User. Admin authentication is out of
+//   scope for this phase and must not be anticipated by making this nullable.
+//   When admin auth is added (Phase 10), a separate admin_refresh_tokens table
+//   or a migration adding admin_user_id will be evaluated at that time.
+//
+// device_id is a plain String? (not a FK):
+//   Informational association. A token can exist for a device_id that does
+//   not yet have a UserDevice row (edge case in the guest registration flow).
+model RefreshToken {
+  id         String    @id @default(cuid())
+  user_id    String
+  token_hash String    @unique
+  expires_at DateTime
+  revoked_at DateTime?
+  device_id  String?
+  created_at DateTime  @default(now())
+
+  // Relations
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id])
+  @@index([expires_at])
+  @@map("refresh_tokens")
+}
+
+// UserDevice
+// ----------
+// Tracks devices associated with users or guests.
+//
+// user_id is nullable: a device is registered by the client before a user
+// account exists (guest flow). It is linked to a user on registration or login.
+//
+// device_id is a client-supplied opaque identifier unique to the device.
+//
+// fcm_token is nullable: Firebase Cloud Messaging credentials are not yet
+// available from CEAT. The column is present so no schema migration is needed
+// when Firebase is activated. FCM integration is a future phase.
+//
+// onDelete: SetNull — if a user is deleted, user_id becomes null but the
+// device record is preserved (useful for analytics continuity).
+model UserDevice {
+  id           String    @id @default(cuid())
+  user_id      String?
+  device_id    String    @unique
+  platform     Platform
+  app_version  String?
+  fcm_token    String?
+  is_active    Boolean   @default(true)
+  last_seen_at DateTime  @default(now())
+  created_at   DateTime  @default(now())
+  updated_at   DateTime  @updatedAt
+
+  // Relations
+  user User? @relation(fields: [user_id], references: [id], onDelete: SetNull)
+
+  @@index([user_id])
+  @@map("user_devices")
+}
+
+// Category
+// --------
+// Hierarchical category structure for CAMSO products.
+//
+// parent_id is nullable: null means top-level root category.
+// slug is unique for client routing and search indexing.
+// is_active supports soft-delete (inactive categories are hidden from public browse).
+model Category {
+  id          String     @id @default(cuid())
+  parent_id   String?
+  name        String
+  slug        String     @unique
+  description String?
+  icon_url    String?
+  banner_url  String?
+  is_active   Boolean    @default(true)
+  sort_order  Int        @default(0)
+  created_at  DateTime   @default(now())
+  updated_at  DateTime   @updatedAt
+
+  // Self-relation hierarchy
+  parent      Category?  @relation("CategoryHierarchy", fields: [parent_id], references: [id], onDelete: SetNull)
+  children    Category[] @relation("CategoryHierarchy")
+  products    Product[]
+
+  @@index([parent_id])
+  @@index([is_active])
+  @@map("categories")
+}
+
+// Product
+// -------
+// Master product entity for CAMSO catalogue.
+//
+// pid is unique enterprise product identifier (e.g. "CAMSO-400", "CEAT-200").
+// slug is unique for SEO and client routing.
+// is_active supports soft-delete.
+model Product {
+  id          String   @id @default(cuid())
+  pid         String   @unique
+  category_id String
+  name        String
+  slug        String   @unique
+  description String?
+  is_active   Boolean  @default(true)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  // Relations
+  category       Category               @relation(fields: [category_id], references: [id], onDelete: Restrict)
+  images         ProductImage[]
+  specifications ProductSpecification[]
+  bookmarks      Bookmark[]
+
+  @@index([category_id])
+  @@index([is_active])
+  @@map("products")
+}
+
+// ProductImage
+// ------------
+// Attached images for a product with sort ordering and primary flag.
+model ProductImage {
+  id             String   @id @default(cuid())
+  product_id     String
+  media_asset_id String?
+  url            String
+  sort_order     Int      @default(0)
+  is_primary     Boolean  @default(false)
+  created_at     DateTime @default(now())
+
+  // Relations
+  product Product @relation(fields: [product_id], references: [id], onDelete: Cascade)
+
+  @@index([product_id])
+  @@map("product_images")
+}
+
+// ProductSpecification
+// --------------------
+// Technical specifications, dimensions, and performance attributes.
+// is_filterable marks attributes indexed for catalogue multi-facet filtering.
+model ProductSpecification {
+  id            String   @id @default(cuid())
+  product_id    String
+  spec_type     SpecType @default(SPECIFICATION)
+  spec_key      String
+  spec_value    String
+  unit          String?
+  is_filterable Boolean  @default(false)
+  sort_order    Int      @default(0)
+
+  // Relations
+  product Product @relation(fields: [product_id], references: [id], onDelete: Cascade)
+
+  @@unique([product_id, spec_key])
+  @@index([product_id])
+  @@index([spec_key])
+  @@index([is_filterable])
+  @@map("product_specifications")
+}
+
+// =============================================================================
+// Backend-Controlled Configuration Models
+// =============================================================================
+
+// Language
+// --------
+// Runtime-configurable supported languages for the mobile app and CMS.
+// Serves as the backend source of truth for dynamic language selection.
+model Language {
+  code        String   @id // ISO 639-1 alpha-2 code (e.g. "en", "fr", "de", "it")
+  name        String   // English display name
+  native_name String?  // Native script display name (e.g. "Français", "Deutsch")
+  flag_emoji  String?  // Unicode flag or icon identifier
+  is_active   Boolean  @default(true)
+  sort_order  Int      @default(0)
+  created_at  DateTime @default(now())
+  updated_at   DateTime      @updatedAt
+  translations Translation[]
+
+  @@index([is_active, sort_order])
+  @@map("languages")
+}
+
+// AppContent
+// ----------
+// Key-value runtime-configurable app content and system settings.
+// Backs dynamic screens: settings, about, contact, legal, and feature flags.
+// Persisted changes take effect immediately without application restart.
+model AppContent {
+  id         String   @id @default(cuid())
+  key        String   @unique // e.g. "settings", "about", "contact", "legal", "features"
+  title      String?
+  content    Json?    // Structured configuration parameters or CMS text
+  extra      Json?    // Optional metadata / dynamic toggles
+  is_active  Boolean  @default(true)
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  @@index([key, is_active])
+  @@map("app_content")
+}
+
+// =============================================================================
+// Search & Discovery Models (search.prisma domain)
+// =============================================================================
+
+// SearchLog
+// ---------
+// Tracks user/guest search history for analytics and recent search queries.
+model SearchLog {
+  id            String   @id @default(cuid())
+  user_id       String?
+  device_id     String?
+  query_text    String
+  filters       Json?
+  results_count Int      @default(0)
+  created_at    DateTime @default(now())
+
+  // Relations
+  user User? @relation(fields: [user_id], references: [id], onDelete: SetNull)
+
+  @@index([user_id, created_at])
+  @@index([device_id, created_at])
+  @@index([query_text])
+  @@map("search_logs")
+}
+
+// PopularSearch
+// -------------
+// Aggregated top search terms by query hit frequency.
+// Updated atomically and concurrency-safely via PostgreSQL ON CONFLICT.
+model PopularSearch {
+  query_text   String   @id
+  hit_count    Int      @default(1)
+  last_updated DateTime @default(now())
+
+  @@index([hit_count(sort: Desc)])
+  @@map("popular_searches")
+}
+
+// =============================================================================
+// Bookmarks Models (search.prisma / bookmarks domain)
+// =============================================================================
+
+// Bookmark
+// --------
+// Stores saved/bookmarked catalogue products for authenticated users and guest devices.
+// Enforces partial unique indexes via PostgreSQL custom migration:
+//   - bookmarks_user_product_unique on (user_id, product_id) WHERE user_id IS NOT NULL
+//   - bookmarks_device_product_unique on (device_id, product_id) WHERE device_id IS NOT NULL
+model Bookmark {
+  id         String   @id @default(cuid())
+  user_id    String?
+  device_id  String?
+  product_id String
+  created_at DateTime @default(now())
+
+  // Relations
+  user    User?   @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [product_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id])
+  @@index([device_id])
+  @@index([product_id])
+  @@map("bookmarks")
+}
+
+// =============================================================================
+// Admin Domain Models
+// =============================================================================
+
+enum AdminRole {
+  SUPER_ADMIN
+  CONTENT_ADMIN
+  MARKETING
+  VIEWER
+}
+
+model AdminUser {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  password_hash String
+  is_active     Boolean  @default(true)
+  role          AdminRole
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  refresh_tokens AdminRefreshToken[]
+  audit_logs     AuditLog[]
+  media_assets   MediaAsset[]
+  notifications  Notification[]
+  campaigns      Campaign[]
+
+  @@index([role, is_active])
+  @@map("admin_users")
+}
+
+model AdminRefreshToken {
+  id         String    @id @default(cuid())
+  admin_id   String
+  token_hash String    @unique
+  expires_at DateTime
+  revoked_at DateTime?
+  created_at DateTime  @default(now())
+
+  admin AdminUser @relation(fields: [admin_id], references: [id], onDelete: Cascade)
+
+  @@index([admin_id])
+  @@index([expires_at])
+  @@map("admin_refresh_tokens")
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  LOGIN
+  STATUS_CHANGE
+  PUBLISH
+  UNPUBLISH
+}
+
+model AuditLog {
+  id          String      @id @default(cuid())
+  actor_id    String?
+  actor_email String?
+  action      AuditAction
+  entity_type String
+  entity_id   String?
+  details     Json?
+  changes     Json?
+  ip_address  String?
+  user_agent  String?
+  created_at  DateTime    @default(now())
+
+  actor AdminUser? @relation(fields: [actor_id], references: [id], onDelete: SetNull)
+
+  @@index([actor_id])
+  @@index([entity_type, entity_id])
+  @@index([created_at])
+  @@map("audit_logs")
+}
+
+// =============================================================================
+// Business Domain Models (Dealer & Distributor Personas)
+// =============================================================================
+
+enum BusinessType {
+  DEALER
+  DISTRIBUTOR
+  OEM_PARTNER
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  SUSPENDED
+}
+
+enum BusinessUserStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+}
+
+model BusinessOrganization {
+  id              String         @id @default(cuid())
+  name            String
+  code            String?        @unique
+  type            BusinessType
+  approval_status ApprovalStatus @default(PENDING)
+  is_active       Boolean        @default(true)
+  address         String?
+  city            String?
+  state           String?
+  country         String?
+  phone           String?
+  email           String?
+  created_at      DateTime       @default(now())
+  updated_at      DateTime       @updatedAt
+
+  members BusinessUser[]
+
+  @@index([type, approval_status])
+  @@map("business_organizations")
+}
+
+model BusinessUser {
+  id              String             @id @default(cuid())
+  organization_id String
+  email           String             @unique
+  password_hash   String
+  display_name    String?
+  phone           String?
+  role            BusinessType
+  status          BusinessUserStatus @default(ACTIVE)
+  created_at      DateTime           @default(now())
+  updated_at      DateTime           @updatedAt
+
+  organization   BusinessOrganization   @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+  refresh_tokens BusinessRefreshToken[]
+
+  @@index([organization_id])
+  @@index([role, status])
+  @@map("business_users")
+}
+
+model BusinessRefreshToken {
+  id               String       @id @default(cuid())
+  business_user_id String
+  token_hash       String       @unique
+  expires_at       DateTime
+  revoked_at       DateTime?
+  created_at       DateTime     @default(now())
+
+  business_user BusinessUser @relation(fields: [business_user_id], references: [id], onDelete: Cascade)
+
+  @@index([business_user_id])
+  @@index([expires_at])
+  @@map("business_refresh_tokens")
+}
+
+// =============================================================================
+// Shared Core Models (Translations & Media Assets)
+// =============================================================================
+
+model Translation {
+  id            String   @id @default(cuid())
+  entity_type   String   @db.VarChar(100)
+  entity_id     String
+  field         String   @db.VarChar(100)
+  language_code String   @db.VarChar(10)
+  value         String   @db.Text
+
+  language Language @relation(fields: [language_code], references: [code])
+
+  @@unique([entity_type, entity_id, field, language_code])
+  @@index([entity_type, entity_id])
+  @@map("translations")
+}
+
+model MediaAsset {
+  id                   String   @id @default(cuid())
+  url                  String   @db.Text
+  filename             String   @db.VarChar(255)
+  mime_type            String   @db.VarChar(100)
+  size_bytes           Int
+  uploaded_by_admin_id String?
+  created_at           DateTime @default(now())
+
+  uploaded_by    AdminUser?     @relation(fields: [uploaded_by_admin_id], references: [id], onDelete: SetNull)
+  document_files DocumentFile[]
+  testimonials   Testimonial[]
+
+  @@map("media_assets")
+}
+
+// =============================================================================
+// Content CMS Domain Models (Documents, Testimonials, FAQs, Dealers, Feedback)
+// =============================================================================
+
+enum DocumentType {
+  CATALOGUE
+  BROCHURE
+  MANUAL
+  TECHNICAL_GUIDE
+  BULLETIN
+  WARRANTY
+  VIDEO
+}
+
+model Document {
+  id             String       @id @default(cuid())
+  product_id     String?
+  category_id    String?
+  document_type  DocumentType
+  is_published   Boolean      @default(false)
+  download_count Int          @default(0)
+  created_at     DateTime     @default(now())
+  updated_at     DateTime     @updatedAt
+
+  files DocumentFile[]
+
+  @@index([product_id])
+  @@index([category_id])
+  @@index([is_published])
+  @@map("documents")
+}
+
+model DocumentFile {
+  id                      String   @id @default(cuid())
+  document_id             String
+  language_code           String   @db.VarChar(10)
+  media_asset_id          String
+  is_offline_downloadable Boolean  @default(false)
+
+  document    Document   @relation(fields: [document_id], references: [id], onDelete: Cascade)
+  media_asset MediaAsset @relation(fields: [media_asset_id], references: [id], onDelete: Restrict)
+
+  @@unique([document_id, language_code])
+  @@map("document_files")
+}
+
+enum StoryType {
+  SOLIDS
+  OPERATING_COST
+  WORN_PRODUCT_REPLACEMENT
+  REPEAT_PURCHASE
+}
+
+model Testimonial {
+  id             String      @id @default(cuid())
+  product_id     String?
+  customer_name  String      @db.VarChar(255)
+  region         String      @db.VarChar(100)
+  story_type     StoryType
+  content        String      @db.Text
+  media_asset_id String?
+  is_published   Boolean     @default(false)
+  created_at     DateTime    @default(now())
+  updated_at     DateTime    @updatedAt
+
+  media_asset MediaAsset? @relation(fields: [media_asset_id], references: [id], onDelete: SetNull)
+
+  @@index([product_id])
+  @@index([is_published])
+  @@map("testimonials")
+}
+
+enum FaqCategory {
+  COMPANY
+  PRODUCT
+  DISTRIBUTION
+}
+
+model Faq {
+  id           String      @id @default(cuid())
+  product_id   String?
+  category     FaqCategory
+  sort_order   Int         @default(0)
+  is_published Boolean     @default(false)
+  created_at   DateTime    @default(now())
+  updated_at   DateTime    @updatedAt
+
+  @@index([product_id])
+  @@index([category, is_published])
+  @@map("faqs")
+}
+
+enum DealerType {
+  DEALER
+  DISTRIBUTOR
+}
+
+model Dealer {
+  id        String     @id @default(cuid())
+  name      String     @db.VarChar(255)
+  type      DealerType
+  address   String     @db.Text
+  city      String     @db.VarChar(100)
+  state     String     @db.VarChar(100)
+  country   String     @db.VarChar(10)
+  geo_lat   Decimal    @db.Decimal(10, 7)
+  geo_lng   Decimal    @db.Decimal(10, 7)
+  phone     String?    @db.VarChar(50)
+  email     String?    @db.VarChar(255)
+  has_csr   Boolean    @default(false)
+  is_active Boolean    @default(true)
+
+  @@index([country, is_active])
+  @@index([geo_lat, geo_lng])
+  @@map("dealers")
+}
+
+enum FeedbackBucket {
+  PRODUCT
+  SERVICE
+  PRICING
+}
+
+model Feedback {
+  id         String         @id @default(cuid())
+  user_id    String?
+  device_id  String         @db.VarChar(255)
+  product_id String?
+  bucket     FeedbackBucket
+  rating     Int
+  comment    String?        @db.Text
+  created_at DateTime       @default(now())
+
+  @@index([user_id])
+  @@index([product_id])
+  @@index([bucket])
+  @@map("feedback")
+}
+
+// =============================================================================
+// Engagement & Campaigns Domain Models
+// =============================================================================
+
+enum NotificationType {
+  NEW_LAUNCH
+  DISCONTINUED
+  PROMOTION
+}
+
+enum NotificationStatus {
+  DRAFT
+  SENT
+}
+
+model Notification {
+  id                String             @id @default(cuid())
+  product_id        String?
+  campaign_id       String?
+  notification_type NotificationType
+  created_by        String
+  status            NotificationStatus @default(DRAFT)
+  sent_at           DateTime?
+  created_at        DateTime           @default(now())
+  updated_at        DateTime           @updatedAt
+
+  campaign   Campaign? @relation(fields: [campaign_id], references: [id], onDelete: SetNull)
+  admin_user AdminUser @relation(fields: [created_by], references: [id], onDelete: Cascade)
+
+  @@index([campaign_id])
+  @@index([created_by])
+  @@index([status])
+  @@map("notifications")
+}
+
+enum CampaignTargetType {
+  ALL_USERS
+  BUSINESS_TYPE
+  LANGUAGE
+  COUNTRY
+}
+
+enum CampaignStatus {
+  DRAFT
+  SENT
+}
+
+model Campaign {
+  id           String              @id @default(cuid())
+  name         String              @db.VarChar(255)
+  target_type  CampaignTargetType
+  target_value String?             @db.VarChar(100)
+  status       CampaignStatus      @default(DRAFT)
+  scheduled_at DateTime?
+  created_by   String
+  created_at   DateTime            @default(now())
+  updated_at   DateTime            @updatedAt
+
+  admin_user    AdminUser      @relation(fields: [created_by], references: [id], onDelete: Cascade)
+  notifications Notification[]
+
+  @@index([created_by])
+  @@index([status])
+  @@map("campaigns")
+}
+
+
+
+
