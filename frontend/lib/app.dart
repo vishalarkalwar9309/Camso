@@ -26,10 +26,19 @@ class CamsoApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final state = context.watch<AppState>();
+
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'CAMSO by CEAT',
       theme: buildTheme(),
+      locale: Locale(state.language),
+      supportedLocales: const [
+        Locale('en'),
+        Locale('fr'),
+        Locale('de'),
+        Locale('it'),
+      ],
       builder: (context, child) {
         final mediaQuery = MediaQuery.of(context);
         final isWide = mediaQuery.size.width > 680;

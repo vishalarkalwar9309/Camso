@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../data/mock_data.dart';
+import '../models/product.dart';
 import '../state/app_state.dart';
 import '../theme/colors.dart';
 import '../theme/typography.dart';
@@ -111,14 +112,58 @@ class _ProductUpdatesScreenState extends State<ProductUpdatesScreen> {
               // FIND RELATED PRODUCT
               // ----------------------------------------------------
 
-              final productId = update['productId'];
+              final productId = update['productId']?.toString();
+              final state = context.watch<AppState>();
 
-              final relatedProduct = productId != null
-                  ? products.cast<dynamic>().firstWhere(
-                      (p) => p.id == productId,
-                      orElse: () => null,
-                    )
-                  : null;
+              Product? relatedProduct;
+              if (productId != null && productId.isNotEmpty) {
+                // 1. Check live productItems from AppState by id or pid
+                try {
+                  relatedProduct = state.productItems.firstWhere(
+                    (p) => p.id == productId || p.pid.toLowerCase() == productId.toLowerCase(),
+                  );
+                } catch (_) {}
+
+                // 2. Check legacy/mock mapping for product updates
+                if (relatedProduct == null) {
+                  const legacyPidMap = {
+                    'p006': 'XTR770-12-16.5',
+                    'p001': 'SKS1-10-16.5',
+                    'p002': 'MH701-14.00-24',
+                    'p003': 'CTL400-450x86x56',
+                    'p004': 'MPT653-405-70R20',
+                  };
+                  final mappedPid = legacyPidMap[productId];
+                  if (mappedPid != null) {
+                    try {
+                      relatedProduct = state.productItems.firstWhere(
+                        (p) => p.pid.toLowerCase() == mappedPid.toLowerCase(),
+                      );
+                    } catch (_) {}
+                  }
+                }
+
+                // 3. Match by name or title from the update
+                if (relatedProduct == null) {
+                  final updateTitle = (update['title'] ?? '').toString().toLowerCase();
+                  try {
+                    relatedProduct = state.productItems.firstWhere(
+                      (p) => updateTitle.contains(p.name.toLowerCase()) ||
+                          p.name.toLowerCase().contains(updateTitle) ||
+                          (p.pid.isNotEmpty && updateTitle.contains(p.pid.toLowerCase())),
+                    );
+                  } catch (_) {}
+                }
+
+                // 4. Fallback to mock products list
+                if (relatedProduct == null) {
+                  try {
+                    relatedProduct = products.firstWhere(
+                      (p) => p.id == productId || p.pid.toLowerCase() == productId.toLowerCase(),
+                    );
+                  } catch (_) {}
+                }
+              }
 
               final isRead = update['isRead'] == true;
 
@@ -159,7 +204,7 @@ class _ProductUpdatesScreenState extends State<ProductUpdatesScreen> {
                                 MaterialPageRoute(
                                   builder: (_) =>
                                       ProductDetailScreen(
-                                    product: relatedProduct,
+                                    product: relatedProduct!,
                                   ),
                                 ),
                               );

@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../core/auth/bookmark_guard.dart';
+import '../core/download/document_download_service.dart';
 import '../models/document.dart';
+import '../repositories/document_repository.dart';
 import '../screens/document_detail_screen.dart';
 import '../state/app_state.dart';
 
@@ -21,6 +23,7 @@ class DocumentCard extends StatefulWidget {
 class _DocumentCardState extends State<DocumentCard> {
   bool downloaded = false;
   bool downloading = false;
+  String? _savedFilePath;
 
   String get category => widget.doc.category;
   String get title => widget.doc.title;
@@ -56,6 +59,16 @@ class _DocumentCardState extends State<DocumentCard> {
     final appState = context.read<AppState>();
     if (downloading) return;
 
+    if (!widget.doc.hasFile) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('This document record does not currently have a downloadable file attached.'),
+          backgroundColor: Color(0xFFF59E0B),
+        ),
+      );
+      return;
+    }
+
     if (!isAuthorized || (!widget.doc.isPublic && !appState.loggedIn)) {
       final shouldSignIn = await showDialog<bool>(
         context: context,
@@ -88,18 +101,80 @@ class _DocumentCardState extends State<DocumentCard> {
     }
 
     setState(() => downloading = true);
-    await Future.delayed(const Duration(milliseconds: 700));
-    if (!mounted) return;
-    setState(() {
-      downloading = false;
-      downloaded = true;
-    });
+    try {
+      final info = await appState.documentRepository.getDownloadInfo(widget.doc.id);
+      if (!mounted) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Downloaded "$title" ($fileSize) successfully.'),
-      ),
-    );
+      final preferredName = widget.doc.filename != null && widget.doc.filename!.isNotEmpty
+          ? widget.doc.filename!
+          : (info.fileName.isNotEmpty ? info.fileName : '${title.replaceAll(' ', '_')}.pdf');
+
+      final downloadService = DocumentDownloadService();
+      final result = await downloadService.downloadAndSave(
+        downloadUrl: info.downloadUrl,
+        preferredFileName: preferredName,
+      );
+
+      if (!mounted) return;
+
+      if (!result.isSuccess) {
+        setState(() {
+          downloading = false;
+          downloaded = false;
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(result.errorMessage ?? 'Download failed.'),
+            backgroundColor: const Color(0xFFDC2626),
+          ),
+        );
+        return;
+      }
+
+      setState(() {
+        downloading = false;
+        downloaded = true;
+        _savedFilePath = result.filePath;
+      });
+
+      final displayMsg = result.isAccessibleDownloadsFolder
+          ? 'Saved "${result.fileName}" to ${result.displayLocation}'
+          : 'Saved "${result.fileName}"';
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          duration: const Duration(seconds: 7),
+          content: Text(displayMsg),
+          backgroundColor: const Color(0xFF10B981),
+          action: SnackBarAction(
+            label: 'OPEN',
+            textColor: Colors.white,
+            onPressed: () {
+              downloadService.openFile(result.filePath!);
+            },
+          ),
+        ),
+      );
+    } on DocumentException catch (e) {
+      if (!mounted) return;
+      setState(() => downloading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.message),
+          backgroundColor: const Color(0xFFDC2626),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => downloading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString()),
+          backgroundColor: const Color(0xFFDC2626),
+        ),
+      );
+    }
   }
 
   @override
@@ -121,6 +196,7 @@ class _DocumentCardState extends State<DocumentCard> {
             context,
             MaterialPageRoute(
               builder: (_) => DocumentDetailScreen(
+                document: widget.doc,
                 documentId: id,
                 title: title,
               ),
@@ -314,7 +390,13 @@ class _DocumentCardState extends State<DocumentCard> {
                                 ? const Color(0xFF203F99)
                                 : const Color(0xFF6B7280),
                           ),
-                    onTap: () => handleDownload(isAuthorized),
+                    onTap: () {
+                      if (downloaded && _savedFilePath != null) {
+                        DocumentDownloadService().openFile(_savedFilePath!);
+                      } else {
+                        handleDownload(isAuthorized);
+                      }
+                    },
                   ),
                 ],
               ),

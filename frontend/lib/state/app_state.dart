@@ -36,10 +36,26 @@ class AppState extends ChangeNotifier {
   final ContentRepository contentRepository = ContentRepository();
 
   // --- State Variables ---
+  static const String languageKey = 'camso_app_language';
+  static const List<String> supportedLanguages = ['en', 'fr', 'de', 'it'];
+
   int tab = 0;
   String language = 'en';
   bool _initialized = false;
   bool get isInitialized => _initialized;
+
+  static String normalizeLanguage(String? code) {
+    if (code == null || code.trim().isEmpty) return 'en';
+    final lower = code.trim().toLowerCase();
+    if (supportedLanguages.contains(lower)) {
+      return lower;
+    }
+    final prefix = lower.split(RegExp(r'[-_]')).first;
+    if (supportedLanguages.contains(prefix)) {
+      return prefix;
+    }
+    return 'en';
+  }
 
   AuthSession? _session;
   AuthSession? get session => _session;
@@ -64,6 +80,15 @@ class AppState extends ChangeNotifier {
   int get unreadCount => notificationItems.where((n) => !n.isRead).length;
 
   Future<void> _init() async {
+    // Restore saved language preference
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedLang = prefs.getString(languageKey);
+      if (savedLang != null && savedLang.isNotEmpty) {
+        language = normalizeLanguage(savedLang);
+      }
+    } catch (_) {}
+
     final restored = await authService.restoreSession();
     if (restored != null) {
       _session = restored;
@@ -130,9 +155,14 @@ class AppState extends ChangeNotifier {
   }
 
   void setLanguage(String code) {
-    if (language == code) return;
-    language = code;
+    final normalized = normalizeLanguage(code);
+    if (language == normalized) return;
+    language = normalized;
     notifyListeners();
+
+    SharedPreferences.getInstance().then((prefs) {
+      prefs.setString(languageKey, normalized);
+    }).catchError((_) {});
   }
 
   /// Translate a key based on current active language.
@@ -271,6 +301,18 @@ class AppState extends ChangeNotifier {
         notifyListeners();
       }
     } catch (_) {}
+  }
+
+  void mergeDocuments(List<Document> newDocs) {
+    if (newDocs.isEmpty) return;
+    final Map<String, Document> map = {
+      for (final d in documentItems) d.id: d,
+    };
+    for (final d in newDocs) {
+      map[d.id] = d;
+    }
+    documentItems = map.values.toList();
+    notifyListeners();
   }
 
   Future<Document> addDocument(Document doc) async {

@@ -31,11 +31,21 @@ class _LanguageScreenState extends State<LanguageScreen> {
       final results = await repo.getLanguages();
       if (mounted && results.isNotEmpty) {
         final mapped = results.map<Map<String, String>>((item) {
+          final code = item['code']?.toString() ?? '';
+          final name = item['name']?.toString() ?? '';
+          final native = item['native_name']?.toString() ??
+              item['nativeName']?.toString() ??
+              item['native']?.toString() ??
+              name;
+          final flag = item['flag_emoji']?.toString() ??
+              item['flag']?.toString() ??
+              '🌐';
           return {
-            'code': item['code']?.toString() ?? '',
-            'name': item['name']?.toString() ?? '',
-            'nativeName': item['native_name']?.toString() ?? item['name']?.toString() ?? '',
-            'flag': item['flag']?.toString() ?? '🌐',
+            'code': code,
+            'name': name,
+            'native': native,
+            'nativeName': native,
+            'flag': flag,
           };
         }).toList();
         setState(() {
@@ -58,7 +68,7 @@ class _LanguageScreenState extends State<LanguageScreen> {
       backgroundColor: const Color(0xFFF2F4F8),
       appBar: AppBar(
         title: Text(
-          'LANGUAGE',
+          state.tr('header_language'),
           style: AppTypography.heading(24),
         ),
       ),
@@ -93,12 +103,13 @@ class _LanguageScreenState extends State<LanguageScreen> {
                         : Colors.white,
                     child: InkWell(
                       onTap: () {
-                        state.setLanguage(language['code']!);
+                        final code = language['code'] ?? 'en';
+                        state.setLanguage(code);
                         ScaffoldMessenger.of(context).hideCurrentSnackBar();
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
                             content: Text(
-                              'Language changed to ${language['name']}',
+                              'Language changed to ${language['name'] ?? code}',
                             ),
                             duration: const Duration(seconds: 1),
                           ),
@@ -121,7 +132,7 @@ class _LanguageScreenState extends State<LanguageScreen> {
                         child: Row(
                           children: [
                             Text(
-                              language['flag']!,
+                              language['flag'] ?? '🌐',
                               style: const TextStyle(
                                 fontSize: 24,
                               ),
@@ -133,7 +144,7 @@ class _LanguageScreenState extends State<LanguageScreen> {
                                     CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    language['name']!,
+                                    language['name'] ?? '',
                                     style: AppTypography.body(
                                       13,
                                       weight: FontWeight.w600,
@@ -141,7 +152,10 @@ class _LanguageScreenState extends State<LanguageScreen> {
                                   ),
                                   const SizedBox(height: 2),
                                   Text(
-                                    language['native']!,
+                                    language['native'] ??
+                                        language['nativeName'] ??
+                                        language['name'] ??
+                                        '',
                                     style: AppTypography.body(
                                       10,
                                       color: AppColors.muted,

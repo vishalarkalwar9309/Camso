@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../core/auth/bookmark_guard.dart';
+import '../models/document.dart';
 import '../models/product.dart';
+import '../repositories/document_repository.dart';
 import '../repositories/product_repository.dart';
 import '../state/app_state.dart';
 import '../theme/colors.dart';
@@ -13,11 +15,13 @@ import '../components/document_card.dart';
 class ProductDetailScreen extends StatefulWidget {
   final Product product;
   final ProductRepository? repository;
+  final DocumentRepository? documentRepository;
 
   const ProductDetailScreen({
     super.key,
     required this.product,
     this.repository,
+    this.documentRepository,
   });
 
   @override
@@ -32,6 +36,10 @@ class _ProductDetailScreenState
   bool _isRefreshing = false;
   String? _refreshError;
 
+  List<Document>? _productDocuments;
+  bool _documentsLoading = false;
+  String? _documentsError;
+
   final List<String> tabs = [
     'Overview',
     'Specs',
@@ -44,6 +52,41 @@ class _ProductDetailScreenState
     super.initState();
     _currentProduct = widget.product;
     _fetchProductDetail();
+    _fetchProductDocuments();
+  }
+
+  DocumentRepository get _docRepo =>
+      widget.documentRepository ?? context.read<AppState>().documentRepository;
+
+  Future<void> _fetchProductDocuments() async {
+    final identifier = _currentProduct.id.isNotEmpty
+        ? _currentProduct.id
+        : _currentProduct.pid;
+    if (identifier.isEmpty) return;
+
+    if (!mounted) return;
+    setState(() {
+      _documentsLoading = true;
+      _documentsError = null;
+    });
+
+    try {
+      final docs = await _docRepo.getDocuments(productId: identifier);
+      if (!mounted) return;
+      setState(() {
+        _productDocuments = docs;
+        _documentsLoading = false;
+      });
+      try {
+        context.read<AppState>().mergeDocuments(docs);
+      } catch (_) {}
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _documentsError = e.toString();
+        _documentsLoading = false;
+      });
+    }
   }
 
   ProductRepository get _repo =>
@@ -482,6 +525,11 @@ class _ProductDetailScreenState
                             selectedTab =
                                 index;
                           });
+                          if (index == 3 &&
+                              _productDocuments == null &&
+                              !_documentsLoading) {
+                            _fetchProductDocuments();
+                          }
                         },
 
                         child: Stack(
@@ -1345,62 +1393,147 @@ class _ProductDetailScreenState
   // ==============================================================
 
   Widget _documentsTab() {
-  final product = widget.product;
+    final product = _currentProduct;
 
-  final productDocuments = documents.where((document) {
-    return document.productId == product.id;
-  }).toList();
-
-  if (productDocuments.isEmpty) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(
-              Icons.description_outlined,
-              size: 48,
-              color: AppColors.muted,
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'No documents available',
-              style: AppTypography.body(
-                14,
-                color: const Color(0xFF333333),
-                weight: FontWeight.w600,
+    if (_documentsLoading && (_productDocuments == null || _productDocuments!.isEmpty)) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const CircularProgressIndicator(color: AppColors.orange),
+              const SizedBox(height: 14),
+              Text(
+                'Loading product documents...',
+                style: AppTypography.body(13, color: AppColors.muted),
               ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'There are currently no documents associated '
-              'with this product.',
-              textAlign: TextAlign.center,
-              style: AppTypography.body(
-                12,
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (_documentsError != null && (_productDocuments == null || _productDocuments!.isEmpty)) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(
+                Icons.error_outline,
+                size: 48,
+                color: Color(0xFFEF4444),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Could not load documents',
+                style: AppTypography.body(
+                  14,
+                  color: const Color(0xFF333333),
+                  weight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                _documentsError!,
+                textAlign: TextAlign.center,
+                style: AppTypography.body(
+                  12,
+                  color: AppColors.muted,
+                ),
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
+                onPressed: _fetchProductDocuments,
+                icon: const Icon(Icons.refresh, size: 16),
+                label: const Text('Retry'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.blue,
+                  foregroundColor: Colors.white,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    List<Document> allDocs;
+    if (_productDocuments != null) {
+      allDocs = _productDocuments!;
+    } else {
+      try {
+        allDocs = context.watch<AppState>().documentItems;
+      } catch (_) {
+        allDocs = documents;
+      }
+    }
+
+    final productDocuments = (_productDocuments != null)
+        ? _productDocuments!
+        : allDocs.where((document) {
+            if (document.productId == null || document.productId!.isEmpty) return false;
+            return document.productId == product.id ||
+                (product.pid.isNotEmpty && document.productId == product.pid);
+          }).toList();
+
+    if (productDocuments.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(
+                Icons.description_outlined,
+                size: 48,
                 color: AppColors.muted,
               ),
-            ),
-          ],
+              const SizedBox(height: 12),
+              Text(
+                'No documents available',
+                style: AppTypography.body(
+                  14,
+                  color: const Color(0xFF333333),
+                  weight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'There are currently no documents associated with this product.',
+                textAlign: TextAlign.center,
+                style: AppTypography.body(
+                  12,
+                  color: AppColors.muted,
+                ),
+              ),
+              const SizedBox(height: 14),
+              TextButton.icon(
+                onPressed: _fetchProductDocuments,
+                icon: const Icon(Icons.refresh, size: 16),
+                label: const Text('Check for updates'),
+              ),
+            ],
+          ),
         ),
-      ),
+      );
+    }
+
+    return ListView.separated(
+      padding: const EdgeInsets.all(16),
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: productDocuments.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 12),
+      itemBuilder: (context, index) {
+        return DocumentCard(
+          doc: productDocuments[index],
+        );
+      },
     );
   }
-
-  return ListView.separated(
-    padding: const EdgeInsets.all(16),
-    shrinkWrap: true,
-    itemCount: productDocuments.length,
-    separatorBuilder: (_, __) =>
-        const SizedBox(height: 12),
-    itemBuilder: (context, index) {
-      return DocumentCard(
-        doc: productDocuments[index],
-      );
-    },
-  );
-}
 
   // ==============================================================
   // WHITE CARD

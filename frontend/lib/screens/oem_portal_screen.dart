@@ -241,6 +241,7 @@ class _OemPortalScreenState extends State<OemPortalScreen> {
                   context,
                   MaterialPageRoute(
                     builder: (_) => DocumentDetailScreen(
+                      document: doc,
                       documentId: doc.id,
                       title: doc.title,
                     ),
@@ -262,11 +263,34 @@ class _OemPortalScreenState extends State<OemPortalScreen> {
           badgeText: 'CAD Library',
           badgeColor: const Color(0xFF10B981),
           onTap: () {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('CAD boundary model downloads available via secure OEM token.'),
-              ),
-            );
+            Document? cadDoc;
+            final candidates = [..._oemDocs, ...context.read<AppState>().documentItems];
+            for (final d in candidates) {
+              final lower = d.title.toLowerCase();
+              if (lower.contains('cad') || lower.contains('envelope')) {
+                cadDoc = d;
+                break;
+              }
+            }
+            if (cadDoc != null) {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => DocumentDetailScreen(
+                    document: cadDoc,
+                    documentId: cadDoc!.id,
+                    title: cadDoc.title,
+                  ),
+                ),
+              );
+            } else {
+              _showOemResourceInfo(
+                context: context,
+                title: 'OEM 3D CAD Repository & Envelopes',
+                description:
+                    'CAD boundary envelopes (STEP & IGES) provide chassis integration clearances. When requesting specific CAD models, fitment reviews are conducted with CAMSO engineering.',
+              );
+            }
           },
         ),
 
@@ -278,9 +302,34 @@ class _OemPortalScreenState extends State<OemPortalScreen> {
           badgeText: 'Quality / Audit',
           badgeColor: AppColors.orange,
           onTap: () {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Tier-1 compliance certificates loaded.')),
-            );
+            Document? qualityDoc;
+            final candidates = [..._oemDocs, ...context.read<AppState>().documentItems];
+            for (final d in candidates) {
+              final lower = d.title.toLowerCase();
+              if (lower.contains('quality') || lower.contains('compliance') || lower.contains('audit')) {
+                qualityDoc = d;
+                break;
+              }
+            }
+            if (qualityDoc != null) {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => DocumentDetailScreen(
+                    document: qualityDoc,
+                    documentId: qualityDoc!.id,
+                    title: qualityDoc.title,
+                  ),
+                ),
+              );
+            } else {
+              _showOemResourceInfo(
+                context: context,
+                title: 'OEM Quality Compliance & Audit Reference',
+                description:
+                    'Audit checklists, material traceability, inspection records, and certificate verification guidance for OEM partners.',
+              );
+            }
           },
         ),
 
@@ -364,6 +413,82 @@ class _OemPortalScreenState extends State<OemPortalScreen> {
           ],
         ),
         trailing: const Icon(Icons.chevron_right, color: AppColors.muted),
+      ),
+    );
+  }
+
+  void _showOemResourceInfo({
+    required BuildContext context,
+    required String title,
+    required String description,
+  }) {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (bContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 8, 24, 28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.info_outline, color: AppColors.blue, size: 24),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: AppTypography.heading(16, color: AppColors.blue),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              Text(
+                description,
+                style: AppTypography.body(13, color: const Color(0xFF4B5563)),
+              ),
+              const SizedBox(height: 14),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFEF3C7),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFFFCD34D)),
+                ),
+                child: const Text(
+                  'DEMO / REFERENCE ONLY — NOT FOR PRODUCTION USE.',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF92400E),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(bContext),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.blue,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  child: const Text('Close'),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

@@ -85,7 +85,10 @@ class Document {
   final bool isDownloaded;
   final DocumentAccessLevel accessLevel;
   final String? downloadUrl;
+  final bool hasFile;
   final bool isOfflineDownloadable;
+  final String? filename;
+  final int? fileSizeBytes;
 
   const Document({
     required this.id,
@@ -101,9 +104,12 @@ class Document {
     required this.pages,
     required this.language,
     required this.isDownloaded,
+    this.hasFile = true,
     this.accessLevel = DocumentAccessLevel.public,
     this.downloadUrl,
     this.isOfflineDownloadable = true,
+    this.filename,
+    this.fileSizeBytes,
   });
 
   bool get isPublic => accessLevel == DocumentAccessLevel.public;
@@ -122,9 +128,12 @@ class Document {
     int? pages,
     String? language,
     bool? isDownloaded,
+    bool? hasFile,
     DocumentAccessLevel? accessLevel,
     String? downloadUrl,
     bool? isOfflineDownloadable,
+    String? filename,
+    int? fileSizeBytes,
   }) {
     return Document(
       id: id ?? this.id,
@@ -140,24 +149,33 @@ class Document {
       pages: pages ?? this.pages,
       language: language ?? this.language,
       isDownloaded: isDownloaded ?? this.isDownloaded,
+      hasFile: hasFile ?? this.hasFile,
       accessLevel: accessLevel ?? this.accessLevel,
       downloadUrl: downloadUrl ?? this.downloadUrl,
       isOfflineDownloadable:
           isOfflineDownloadable ?? this.isOfflineDownloadable,
+      filename: filename ?? this.filename,
+      fileSizeBytes: fileSizeBytes ?? this.fileSizeBytes,
     );
   }
 
   factory Document.fromJson(Map<String, dynamic> json) {
-    final sizeBytes = json['file_size_bytes'] ?? json['size_bytes'] ?? 0;
-    String sizeStr = '1.2 MB';
+    final sizeBytes = json['file_size_bytes'] ?? json['size_bytes'];
+    final bool hasFile = json['has_file'] == true ||
+        (json['files'] is List && (json['files'] as List).isNotEmpty) ||
+        (sizeBytes is num && sizeBytes > 0);
+
+    String sizeStr = 'File not attached';
     if (sizeBytes is num && sizeBytes > 0) {
       if (sizeBytes >= 1024 * 1024) {
         sizeStr = '${(sizeBytes / (1024 * 1024)).toStringAsFixed(1)} MB';
       } else {
         sizeStr = '${(sizeBytes / 1024).toStringAsFixed(0)} KB';
       }
-    } else if (json['fileSize'] != null) {
+    } else if (json['fileSize'] != null && json['fileSize'].toString().isNotEmpty) {
       sizeStr = json['fileSize'].toString();
+    } else if (!hasFile) {
+      sizeStr = 'File not attached';
     }
 
     String fmt = 'PDF';
@@ -168,27 +186,48 @@ class Document {
       fmt = 'IMG';
     } else if (mime.contains('video')) {
       fmt = 'VIDEO';
-    } else if (json['format'] != null) {
+    } else if (json['format'] != null && json['format'].toString().isNotEmpty) {
       fmt = json['format'].toString();
     }
 
+    final int pagesCount = (json['pages'] is num)
+        ? (json['pages'] as num).toInt()
+        : (hasFile ? 4 : 0);
+
+    String? dlUrl = json['url']?.toString() ?? json['downloadUrl']?.toString();
+    if (dlUrl == null && hasFile && json['id'] != null) {
+      dlUrl = '${ApiClient.baseUrl}/documents/${json['id']}/download';
+    }
+
+    final String? parsedFilename = json['filename']?.toString() ??
+        json['file_name']?.toString() ??
+        ((json['files'] is List &&
+                (json['files'] as List).isNotEmpty &&
+                (json['files'] as List).first is Map)
+            ? ((json['files'] as List).first['filename']?.toString() ??
+               (json['files'] as List).first['file_name']?.toString())
+            : null);
+
     return Document(
       id: json['id']?.toString() ?? '',
-      title: json['title']?.toString() ?? '',
-      type: json['type']?.toString() ?? 'Datasheet',
-      category: json['category']?.toString() ?? 'General',
+      title: json['title']?.toString() ?? 'Untitled Document',
+      type: json['type']?.toString() ?? json['document_type']?.toString() ?? 'Datasheet',
+      category: json['category']?.toString() ?? 'general',
       fileSize: sizeStr,
       format: fmt,
       date: json['created_at']?.toString().split('T').first ?? json['date']?.toString() ?? '2026',
-      version: json['version']?.toString() ?? '1.0',
+      version: json['version']?.toString() ?? (hasFile ? '1.0' : '—'),
       description: json['description']?.toString() ?? '',
       productId: json['product_id']?.toString() ?? json['productId']?.toString(),
-      pages: (json['pages'] is num) ? (json['pages'] as num).toInt() : 4,
+      pages: pagesCount,
       language: json['language']?.toString() ?? 'EN',
       isDownloaded: json['isDownloaded'] == true,
+      hasFile: hasFile,
       accessLevel: DocumentAccessLevel.fromString(json['access_level']?.toString() ?? json['accessLevel']?.toString()),
-      downloadUrl: json['url']?.toString() ?? json['downloadUrl']?.toString() ?? (json['id'] != null ? '${ApiClient.baseUrl}/documents/${json['id']}/download' : null),
+      downloadUrl: dlUrl,
       isOfflineDownloadable: json['isOfflineDownloadable'] != false,
+      filename: parsedFilename,
+      fileSizeBytes: (sizeBytes is num) ? sizeBytes.toInt() : null,
     );
   }
 }

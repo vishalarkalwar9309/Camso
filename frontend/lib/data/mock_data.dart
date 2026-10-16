@@ -12,7 +12,7 @@ final productUpdates = [
     'summary':
         'New skid steer tire engineered for the harshest quarry and demolition environments with maximum puncture resistance.',
     'date': '2024-11-20',
-    'productId': 'p006',
+    'productId': 'cmv6j48qd0045ufj88qjrshv8',
     'isRead': false,
     'tag': 'New Product',
     'tagColor': '#203F99',
@@ -282,21 +282,23 @@ final documents = [
   ),
 
   const Document(
-    id: 'd007',
-    title: 'XTR 770 Product Data Sheet',
+    id: 'cmv9jodyx0000uffkydy4c8ij',
+    title: 'CAMSO XTR 770 Extreme Terrain Tire — Technical Datasheet',
     type: 'Brochure',
     category: 'brochures',
-    fileSize: '2.1 MB',
+    fileSize: '4.2 KB',
     format: 'PDF',
-    date: '2024-11-18',
+    date: '2026-10-15',
     version: '1.0',
     description:
         'Technical data sheet and product highlights for the new XTR 770 extreme terrain tire range.',
-    productId: 'p006',
-    pages: 8,
-    language: 'EN / FR / DE / IT',
+    productId: 'cmv6j48qd0045ufj88qjrshv8',
+    pages: 4,
+    language: 'EN',
     isDownloaded: false,
     accessLevel: DocumentAccessLevel.public,
+    filename: 'xtr_770_datasheet.pdf',
+    fileSizeBytes: 4214,
   ),
 
   // Dealer Restricted Documents
@@ -485,12 +487,12 @@ final products=[
  Product(id:'p003',name:'CTL 400 Rubber Track',pid:'CTL400-400X86X52',category:'rubber-tracks',categoryName:'Rubber Tracks',size:'400x86x52',plyRating:'N/A',treadDepth:'30mm',loadIndex:'N/A',maxLoad:'4,500 kg',maxSpeed:'14 km/h',description:'High-performance rubber track for compact track loaders featuring steel cord reinforcement and an advanced rubber compound for extended service life.',features:['Triple steel cord reinforcement','Bolt-on drive lugs','Low ground pressure design','Excellent surface protection'],applications:['Compact Track Loaders','Pipeline Construction','Landscaping','Soft Ground Operations'],compatibleEquipment:['Bobcat T870','Caterpillar 287D3','Case TV620B','Kubota SVL97-2'],specifications:{'Width':'400 mm','Pitch':'86 mm','Links':'52','Track Length':'4,472 mm','Lugs per Track':'26','Weight':'148.0 kg','Sag':'25–40 mm'},image:image3,isNew:true,isFeatured:false,rating:4.8,reviewCount:113),
  Product(id:'p004',name:'MPT 653 Multi-Purpose Tire',pid:'MPT653-335-80R18',category:'backhoe',categoryName:'Backhoe Tires',size:'335/80R18',plyRating:'12PR',treadDepth:'20mm',loadIndex:'F (143A8)',maxLoad:'2,100 kg',maxSpeed:'65 km/h',description:'Versatile multi-purpose tire for backhoe loaders requiring both on-road efficiency and off-road grip.',features:['All-terrain pattern','Low road noise','Self-cleaning design','Excellent load distribution'],applications:['Backhoe Loaders','Road Construction','Urban Projects','Utility Work'],compatibleEquipment:['JCB 3CX','Caterpillar 420F2','Komatsu WB97R-8','Case 590SN'],specifications:{'Overall Diameter':'915 mm','Section Width':'344 mm','Rim Diameter':'18"','Tread Width':'280 mm','Static Radius':'440 mm','Weight':'54.0 kg','Rim Flange':'11 in'},image:image4,isNew:false,isFeatured:true,rating:4.3,reviewCount:47),
  Product(id:'p005',name:'DFG 303 Mini Excavator Track',pid:'DFG303-300X52.5X84',category:'excavator',categoryName:'Excavator Tracks',size:'300x52.5x84',plyRating:'N/A',treadDepth:'28mm',loadIndex:'N/A',maxLoad:'2,800 kg',maxSpeed:'5.5 km/h',description:'Precision-engineered rubber track for mini excavators. Asymmetric lug pattern ensures excellent traction in confined spaces while minimizing surface damage.',features:['Asymmetric lug pattern','Anti-vibration compound','Enhanced guide protection','Detrack-resistant design'],applications:['Mini Excavators','Narrow Trenching','Landscaping','Basement Work'],compatibleEquipment:['Kubota KX060-5','Yanmar SV60','Takeuchi TB260','Hitachi ZX60-6'],specifications:{'Width':'300 mm','Pitch':'52.5 mm','Links':'84','Track Length':'4,410 mm','Lugs per Track':'42','Weight':'96.0 kg','Sag':'20–35 mm'},image:image5,isNew:false,isFeatured:false,rating:4.6,reviewCount:78),
- Product(id:'p006',name:'XTR 770 Extreme Terrain Tire',pid:'XTR770-12-16.5',category:'skid-steer',categoryName:'Skid Steer Tires',size:'12-16.5',plyRating:'12PR',treadDepth:'27mm',loadIndex:'G (14-ply)',maxLoad:'3,150 kg',maxSpeed:'35 km/h',description:'Extreme duty skid steer tire built for the harshest quarry, demolition, and recycling applications.',features:['Ultra-reinforced carcass','Rim guard protection','Deep void ratio 35%','Impact-resistant compound'],applications:['Quarry Operations','Demolition','Recycling Facilities','Mining Surface'],compatibleEquipment:['Bobcat S850','Caterpillar 272D3','Mustang 3800V','Gehl V420'],specifications:{'Overall Diameter':'730 mm','Section Width':'308 mm','Rim Diameter':'16.5"','Tread Width':'260 mm','Static Radius':'342 mm','Weight':'38.0 kg','Rim Flange':'9.75 in'},image:image6,isNew:true,isFeatured:true,rating:4.9,reviewCount:31),
+ Product(id:'cmv6j48qd0045ufj88qjrshv8',name:'XTR 770 Extreme Terrain Tire',pid:'XTR770-12-16.5',category:'skid-steer',categoryName:'Skid Steer Tires',size:'12-16.5',plyRating:'12PR',treadDepth:'27mm',loadIndex:'G (14-ply)',maxLoad:'3,150 kg',maxSpeed:'35 km/h',description:'Extreme duty skid steer tire built for the harshest quarry, demolition, and recycling applications.',features:['Ultra-reinforced carcass','Rim guard protection','Deep void ratio 35%','Impact-resistant compound'],applications:['Quarry Operations','Demolition','Recycling Facilities','Mining Surface'],compatibleEquipment:['Bobcat S850','Caterpillar 272D3','Mustang 3800V','Gehl V420'],specifications:{'Overall Diameter':'730 mm','Section Width':'308 mm','Rim Diameter':'16.5"','Tread Width':'260 mm','Static Radius':'342 mm','Weight':'38.0 kg','Rim Flange':'9.75 in'},image:image6,isNew:true,isFeatured:true,rating:4.9,reviewCount:31),
  Product(id:'p007',name:'STA 550 Steel Track Assembly',pid:'STA550-450X83.5X71',category:'steel-tracks',categoryName:'Steel Tracks',size:'450x83.5x71',plyRating:'N/A',treadDepth:'45mm',loadIndex:'N/A',maxLoad:'8,000 kg',maxSpeed:'8 km/h',description:'Heavy-duty steel track assembly for large compact track loaders operating in extreme abrasive conditions.',features:['Forged steel links','Replaceable rubber pads','Sealed joint system','Extended service intervals'],applications:['Large CTL Operations','Hard Rock Sites','Demolition Debris','Extreme Abrasion'],compatibleEquipment:['Caterpillar 299D3 XE','Bobcat T86','Doosan DL420','Volvo MCT145D'],specifications:{'Width':'450 mm','Pitch':'83.5 mm','Links':'71','Track Length':'5,929 mm','Pad Width':'430 mm','Weight':'380.0 kg','Shoe Type':'Triple grouser'},image:image7,isNew:false,isFeatured:false,rating:4.4,reviewCount:22),
 ];
 
 final notifications=[
- AppNotification(id:'n001',type:'product_update',title:'New Product: XTR 770 Extreme Terrain Tire',body:'The all-new XTR 770 is now available for skid steer loaders. Engineered for quarry and demolition applications.',date:'2024-11-20T09:00:00Z',isRead:false,icon:'new',productId:'p006'),
+ AppNotification(id:'n001',type:'product_update',title:'New Product: XTR 770 Extreme Terrain Tire',body:'The all-new XTR 770 is now available for skid steer loaders. Engineered for quarry and demolition applications.',date:'2024-11-20T09:00:00Z',isRead:false,icon:'new',productId:'cmv6j48qd0045ufj88qjrshv8'),
  AppNotification(id:'n002',type:'technical_bulletin',title:'Technical Bulletin: MH 701 Pressure Update',body:'Important update regarding inflation pressure in high-temperature environments. Review TB-2024-08 immediately.',date:'2024-11-18T14:30:00Z',isRead:false,icon:'alert'),
  AppNotification(id:'n003',type:'announcement',title:'CAMSO at Bauma 2025',body:'Visit us at Hall B5, Stand 412 to see the full 2025 product lineup and live demonstrations.',date:'2024-11-15T10:00:00Z',isRead:true,icon:'info'),
  AppNotification(id:'n004',type:'product_update',title:'CTL 400 Series — Improved Steel Cord',body:'Updated steel cord reinforcement design provides 15% longer track life.',date:'2024-11-10T08:00:00Z',isRead:true,icon:'update',productId:'p003'),

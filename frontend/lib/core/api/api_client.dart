@@ -46,7 +46,7 @@ class ApiClient {
 
   static String baseUrl = const String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'http://localhost:4000/api/v1',
+    defaultValue: 'https://camso-backend.onrender.com/api/v1',
   );
 
   String? _authToken;
@@ -101,7 +101,7 @@ class ApiClient {
     String path, {
     Map<String, String>? queryParams,
     Map<String, String>? headers,
-    Duration timeout = const Duration(seconds: 5),
+    Duration timeout = const Duration(seconds: 15),
   }) async {
     try {
       final uri = _buildUri(path, queryParams);
@@ -121,7 +121,7 @@ class ApiClient {
     String path, {
     dynamic body,
     Map<String, String>? headers,
-    Duration timeout = const Duration(seconds: 5),
+    Duration timeout = const Duration(seconds: 15),
   }) async {
     try {
       final uri = _buildUri(path);
@@ -142,7 +142,7 @@ class ApiClient {
     String path, {
     dynamic body,
     Map<String, String>? headers,
-    Duration timeout = const Duration(seconds: 5),
+    Duration timeout = const Duration(seconds: 15),
   }) async {
     try {
       final uri = _buildUri(path);
@@ -163,7 +163,7 @@ class ApiClient {
     String path, {
     dynamic body,
     Map<String, String>? headers,
-    Duration timeout = const Duration(seconds: 5),
+    Duration timeout = const Duration(seconds: 15),
   }) async {
     try {
       final uri = _buildUri(path);
@@ -183,7 +183,7 @@ class ApiClient {
   Future<ApiResponse<dynamic>> delete(
     String path, {
     Map<String, String>? headers,
-    Duration timeout = const Duration(seconds: 5),
+    Duration timeout = const Duration(seconds: 15),
   }) async {
     try {
       final uri = _buildUri(path);

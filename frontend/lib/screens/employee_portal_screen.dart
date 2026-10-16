@@ -150,6 +150,7 @@ class EmployeePortalScreen extends StatelessWidget {
                   context,
                   MaterialPageRoute(
                     builder: (_) => DocumentDetailScreen(
+                      document: doc,
                       documentId: doc.id,
                       title: doc.title,
                     ),

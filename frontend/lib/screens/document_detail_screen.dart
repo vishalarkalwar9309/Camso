@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../core/auth/bookmark_guard.dart';
+import '../core/download/document_download_service.dart';
 import '../data/mock_data.dart';
 import '../models/document.dart';
 import '../models/product.dart';
+import '../repositories/document_repository.dart';
 import '../state/app_state.dart';
 import '../theme/colors.dart';
 import '../theme/typography.dart';
@@ -14,11 +15,15 @@ import 'product_detail_screen.dart';
 class DocumentDetailScreen extends StatefulWidget {
   final String? documentId;
   final String title;
+  final Document? document;
+  final DocumentRepository? repository;
 
   const DocumentDetailScreen({
     super.key,
     this.documentId,
     this.title = 'CAMSO Product Catalog 2024–25',
+    this.document,
+    this.repository,
   });
 
   @override
@@ -28,13 +33,45 @@ class DocumentDetailScreen extends StatefulWidget {
 class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
   bool downloaded = false;
   bool downloading = false;
+  Document? _currentDoc;
+  String? _savedFilePath;
+
+  DocumentRepository get _docRepo =>
+      widget.repository ?? context.read<AppState>().documentRepository;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentDoc = widget.document;
+    downloaded = widget.document?.isDownloaded ?? false;
+    if (_currentDoc == null && widget.documentId != null && widget.documentId!.isNotEmpty) {
+      _fetchDocument();
+    }
+  }
+
+  Future<void> _fetchDocument() async {
+    final id = widget.documentId;
+    if (id == null || id.isEmpty) return;
+
+    try {
+      final fetched = await _docRepo.getDocumentById(id);
+      if (!mounted) return;
+      setState(() {
+        _currentDoc = fetched;
+        downloaded = fetched.isDownloaded;
+      });
+      try {
+        context.read<AppState>().mergeDocuments([fetched]);
+      } catch (_) {}
+    } catch (_) {}
+  }
 
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
     final doc = _findDocument(state);
     final isAuthorized = doc == null || state.permissions.canViewDocument(doc);
-    final relatedProduct = _findRelatedProduct(doc?.productId);
+    final relatedProduct = _findRelatedProduct(state, doc?.productId);
 
     final isBookmarked = doc != null && state.isBookmarked(doc.id);
     final category = doc?.category ?? 'brochures';
@@ -50,7 +87,19 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
           style: AppTypography.heading(22, color: Colors.white),
         ),
         actions: [
-          if (doc != null)
+          if (doc != null) ...[
+            if (downloaded && _savedFilePath != null)
+              IconButton(
+                tooltip: 'Share',
+                icon: const Icon(Icons.share, color: Colors.white),
+                onPressed: () {
+                  DocumentDownloadService().shareFile(
+                    _savedFilePath!,
+                    text: 'CAMSO Document: ${doc.title}',
+                    subject: doc.title,
+                  );
+                },
+              ),
             IconButton(
               tooltip: 'Bookmark',
               onPressed: () => BookmarkGuard.toggle(context, doc.id, itemName: 'document'),
@@ -59,6 +108,7 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
                 color: Colors.white,
               ),
             ),
+          ],
         ],
       ),
       body: ListView(
@@ -147,8 +197,8 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
                         runSpacing: 6,
                         children: [
                           _headerChip(doc?.type ?? 'Technical Resource'),
-                          _headerChip('v${doc?.version ?? '1.0'}'),
-                          _headerChip('${doc?.pages ?? 12} pages'),
+                          _headerChip(doc?.hasFile == true ? 'v${doc?.version ?? '1.0'}' : 'Reference'),
+                          _headerChip(doc?.pages != null && doc!.pages > 0 ? '${doc.pages} pages' : (doc?.hasFile == true ? 'PDF Guide' : 'Reference doc')),
                         ],
                       ),
                     ],
@@ -165,9 +215,33 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
                         _buildAccessGate(context, state, doc),
                         const SizedBox(height: 16),
                       ],
+                      if (doc != null && !doc.hasFile) ...[
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFFBEB),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: const Color(0xFFFDE68A)),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.info_outline, color: Color(0xFFD97706), size: 18),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'This document is a reference record and does not currently have a downloadable file attached.',
+                                  style: AppTypography.body(11, color: const Color(0xFF92400E)),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                      ],
                       Text(
-                        doc?.description ??
-                            'This document provides product and technical information for CAMSO construction tires and tracks.',
+                        doc?.description.isNotEmpty == true
+                            ? doc!.description
+                            : 'This document provides product and technical information for CAMSO construction tires and tracks.',
                         style: AppTypography.body(12,
                             color: const Color(0xFF555555)),
                       ),
@@ -180,10 +254,10 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
                         physics: const NeverScrollableScrollPhysics(),
                         mainAxisExtent: 60,
                         children: [
-                          _metaBox('FILE SIZE', doc?.fileSize ?? '3.5 MB'),
+                          _metaBox('FILE SIZE', doc?.hasFile == true ? doc!.fileSize : 'Not attached'),
                           _metaBox('FORMAT', doc?.format ?? 'PDF'),
                           _metaBox('DATE', _formatDate(doc?.date)),
-                          _metaBox('LANGUAGES', doc?.language ?? 'EN / FR / DE'),
+                          _metaBox('LANGUAGES', doc?.language ?? 'EN'),
                         ],
                       ),
                       const SizedBox(height: 16),
@@ -193,9 +267,18 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
                         child: ElevatedButton(
                           onPressed: !isAuthorized
                               ? () => _promptUnauthorized(context, doc)
-                              : (downloading || downloaded || doc == null ? null : () => _handleDownload(doc)),
+                              : (doc == null || !doc.hasFile
+                                  ? () {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(
+                                          content: Text('No downloadable file is attached to this document.'),
+                                          backgroundColor: Color(0xFFF59E0B),
+                                        ),
+                                      );
+                                    }
+                                  : (downloading || downloaded ? null : () => _handleDownload(doc))),
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: !isAuthorized
+                            backgroundColor: !isAuthorized || (doc != null && !doc.hasFile)
                                 ? const Color(0xFF9CA3AF)
                                 : (downloaded
                                     ? AppColors.lightBlue
@@ -205,13 +288,13 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
                                 : Colors.white,
                             disabledBackgroundColor: downloaded
                                 ? AppColors.lightBlue
-                                : AppColors.blue,
+                                : (doc != null && !doc.hasFile ? const Color(0xFFE5E7EB) : AppColors.blue),
                             elevation: 0,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12),
                             ),
                           ),
-                          child: _downloadButtonContent(isAuthorized),
+                          child: _downloadButtonContent(isAuthorized, doc),
                         ),
                       ),
                     ],
@@ -324,21 +407,25 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
   }
 
   Future<void> _handleDownload(Document doc) async {
-    final state = context.read<AppState>();
     setState(() => downloading = true);
 
     try {
-      final downloadUrl = await state.documentRepository.downloadDocument(doc.id);
+      final info = await _docRepo.getDownloadInfo(doc.id);
       if (!mounted) return;
 
-      bool opened = false;
-      final uri = Uri.tryParse(downloadUrl);
-      if (uri != null && await canLaunchUrl(uri)) {
-        opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
-      }
+      final preferredName = doc.filename != null && doc.filename!.isNotEmpty
+          ? doc.filename!
+          : (info.fileName.isNotEmpty ? info.fileName : '${doc.title.replaceAll(' ', '_')}.pdf');
+
+      final downloadService = DocumentDownloadService();
+      final result = await downloadService.downloadAndSave(
+        downloadUrl: info.downloadUrl,
+        preferredFileName: preferredName,
+      );
 
       if (!mounted) return;
-      if (!opened) {
+
+      if (!result.isSuccess) {
         setState(() {
           downloading = false;
           downloaded = false;
@@ -346,12 +433,8 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
 
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-              downloadUrl.isNotEmpty
-                  ? 'Document retrieved, but could not open viewer for URL: $downloadUrl'
-                  : 'Document retrieved, but could not launch external viewer.',
-            ),
-            backgroundColor: const Color(0xFFF59E0B),
+            content: Text(result.errorMessage ?? 'Download failed.'),
+            backgroundColor: const Color(0xFFDC2626),
           ),
         );
         return;
@@ -360,12 +443,34 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
       setState(() {
         downloading = false;
         downloaded = true;
+        _savedFilePath = result.filePath;
       });
 
+      final displayMsg = result.isAccessibleDownloadsFolder
+          ? 'Saved "${result.fileName}" to ${result.displayLocation}'
+          : 'Saved "${result.fileName}"';
+
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Authorized document opened in external viewer.'),
-          backgroundColor: Color(0xFF10B981),
+        SnackBar(
+          duration: const Duration(seconds: 7),
+          content: Text(displayMsg),
+          backgroundColor: const Color(0xFF10B981),
+          action: SnackBarAction(
+            label: 'OPEN',
+            textColor: Colors.white,
+            onPressed: () {
+              downloadService.openFile(result.filePath!);
+            },
+          ),
+        ),
+      );
+    } on DocumentException catch (e) {
+      if (!mounted) return;
+      setState(() => downloading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.message),
+          backgroundColor: const Color(0xFFDC2626),
         ),
       );
     } catch (e) {
@@ -406,7 +511,7 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
     );
   }
 
-  Widget _downloadButtonContent(bool isAuthorized) {
+  Widget _downloadButtonContent(bool isAuthorized, Document? doc) {
     if (!isAuthorized) {
       return const Row(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -415,6 +520,17 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
           SizedBox(width: 8),
           Text('SIGN IN TO ACCESS',
               style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+        ],
+      );
+    }
+    if (doc != null && !doc.hasFile) {
+      return const Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.info_outline, size: 16, color: Color(0xFF4B5563)),
+          SizedBox(width: 8),
+          Text('FILE NOT ATTACHED (REFERENCE ONLY)',
+              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF4B5563))),
         ],
       );
     }
@@ -502,8 +618,11 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
   }
 
   Document? _findDocument(AppState state) {
+    if (_currentDoc != null) return _currentDoc;
+    if (widget.document != null) return widget.document;
+
     final requestedId = widget.documentId;
-    if (requestedId != null) {
+    if (requestedId != null && requestedId.isNotEmpty) {
       try {
         return state.documentItems.firstWhere((d) => d.id == requestedId);
       } catch (_) {}
@@ -514,16 +633,25 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
     try {
       return state.documentItems.firstWhere((d) => d.title == widget.title);
     } catch (_) {}
+    try {
+      return documents.firstWhere((d) => d.title == widget.title);
+    } catch (_) {}
     return null;
   }
 
-  Product? _findRelatedProduct(String? productId) {
-    if (productId == null) return null;
+  Product? _findRelatedProduct(AppState state, String? productId) {
+    if (productId == null || productId.isEmpty) return null;
     try {
-      return products.firstWhere((product) => product.id == productId);
-    } catch (_) {
-      return null;
-    }
+      return state.productItems.firstWhere(
+        (product) => product.id == productId || (product.pid.isNotEmpty && product.pid == productId),
+      );
+    } catch (_) {}
+    try {
+      return products.firstWhere(
+        (product) => product.id == productId || (product.pid.isNotEmpty && product.pid == productId),
+      );
+    } catch (_) {}
+    return null;
   }
 
   String _formatDate(String? raw) {
